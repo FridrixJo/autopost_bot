@@ -5,6 +5,7 @@ from aiogram import Bot
 from aiogram import Dispatcher
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import Text
+from aiogram.types import ContentType
 
 from aiogram import types
 import random
@@ -84,6 +85,14 @@ async def cancel_handler(message: types.Message, state: FSMContext):
     await send_menu(message)
 
 
+def get_text(user_id: int):
+    text = 'Выберите магазины для автопостинга (нужно просто нажать на магазин и он будет добавлен ✅ либо убран ❌ из списка автопостинга)' + '\n\n'
+    text += 'После того, как выбрали магазины для атопостинга, нажмите на "Начать размещение"' + '\n\n'
+    text += f'Количество выбранных магазинов на данный момент {len(shops_db.get_all_tagged_shops_by(user_id, "user_id"))}' + '\n\n'
+
+    return text
+
+
 @dispatcher.message_handler(commands=['start'])
 async def start(message: types.Message):
     if not users_db.user_exists(message.chat.id):
@@ -98,13 +107,23 @@ async def start(message: types.Message):
     await send_menu(message)
 
 
-@dispatcher.message_handler(content_types=['new_chat_members'])
+@dispatcher.message_handler(content_types=[ContentType.NEW_CHAT_MEMBERS])
 async def get_chat(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     print(user_id, chat_id)
     if not chats_db.chat_exists(user_id, chat_id):
-        chats_db.add_user(user_id, chat_id)
+        chats_db.add_chat(user_id, str(chat_id))
+
+
+@dispatcher.message_handler(content_types=[ContentType.LEFT_CHAT_MEMBER])
+async def get_chat(message: types.Message):
+    print(1)
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    print(user_id, chat_id)
+    if chats_db.chat_exists(user_id, str(chat_id)):
+        chats_db.delete_chat(user_id, str(chat_id))
 
 
 @dispatcher.callback_query_handler()
@@ -123,8 +142,13 @@ async def get_callback_menu(call: types.CallbackQuery):
         await bot.send_message(call.message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
         await FSMUser.minutes.set()
     elif call.data == 'shows':
-        text = 'Выберите магазины для автопостинга (нужно просто нажать на магазин и он будет добавлен либо убран из списка автопостинга)'
-        await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_shows().add(BACK_BTN))
+        text = get_text(call.message.chat.id)
+        if users_db.get_active(call.message.chat.id) == 1:
+            text += '<i>Показы на данный момент запущены</i>'
+            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops_suspend(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
+        else:
+            text += '<i>Показы на данный момент остановлены</i>'
+            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
         await FSMUser.shows.set()
 
 
@@ -242,6 +266,7 @@ async def get_picture(message: types.Message, state: FSMContext):
                     pic_type=pic_type,
                     picture=file_id
                 )
+                shops_db.edit_shop_tagged(shop_id, 0)
                 text += 'Магазин успешно добавлен ✅' + '\n\n'
                 text += 'Для добавления контактов к магазину нажми на кнопку "Магазины" ниже ⬇' + '\n'
                 text += 'Вам откроется список всех ваших магазинов. И после нажатия на любой созданный магазин вы сможете добавить / отредактировать его контакты'
@@ -512,61 +537,82 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
     if call.data == 'back':
         await clear_state(state)
         await edit_to_menu(call.message)
-    elif call.data == 'main_menu':
-        await clear_state(state)
-        await edit_to_menu(call.message)
-    elif call.data == 'choose':
-        pass
+    elif call.data == 'suspend':
+        if users_db.get_active(call.message.chat.id) == 1:
+            users_db.set_active(call.message.chat.id, 0)
+            text = get_text(call.message.chat.id)
+            text += '<i>Показы на данный момент остановлены</i>'
+            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
+
     elif call.data == 'run':
         if users_db.get_active(call.message.chat.id) == 0:
-            text = 'Показы успешно запущены'
+
+            text = get_text(call.message.chat.id)
+            text += '<i>Показы на данный момент запущены</i>'
+            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops_suspend(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
+
             users_db.set_active(user_id=call.message.chat.id, active=1)
-            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_main_menu())
+
             for j in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
-                if users_db.get_active(call.message.chat.id) == 1:
-                    for i in chats_db.get_chats_by_user(call.message.chat.id):
-                        if users_db.get_active(call.message.chat.id) == 1:
-                            shop_id = shops_db.get_shop_id(call.message.chat.id, name=j[0])
+                shop_id = shops_db.get_shop_id(call.message.chat.id, name=j[0])
+                if shops_db.get_shop_tagged(shop_id) == 1:
+                    if users_db.get_active(call.message.chat.id) == 1:
+                        for i in chats_db.get_chats_by_user(call.message.chat.id):
+                            if users_db.get_active(call.message.chat.id) == 1:
 
-                            pic_type = shops_db.get_shop_pic_type(shop_id)
-                            photo = shops_db.get_shop_picture(shop_id)
-                            shop_name = shops_db.get_shop_name(shop_id)
-                            description = shops_db.get_shop_description(shop_id)
+                                pic_type = shops_db.get_shop_pic_type(shop_id)
+                                photo = shops_db.get_shop_picture(shop_id)
+                                shop_name = shops_db.get_shop_name(shop_id)
+                                description = shops_db.get_shop_description(shop_id)
 
-                            text = f'<b>{shop_name}</b>' + '\n\n'
-                            text += f'{description}' + '\n\n'
-                            text += 'Контакты:'
+                                text = f'<b>{shop_name}</b>' + '\n\n'
+                                text += f'{description}' + '\n\n'
+                                text += 'Контакты:'
 
-                            try:
-                                if pic_type == 'gif':
-                                    message = await bot.send_animation(chat_id=i[0], animation=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
-                                    try:
-                                        await bot.pin_chat_message(chat_id=i[0], message_id=message.message_id, disable_notification=False)
-                                    except Exception as e:
-                                        text = 'Сообщение не было закреплено. Сделайте бот админом чата'
-                                        await bot.send_message(call.message.chat.id, text=text)
+                                try:
+                                    if pic_type == 'gif':
+                                        message = await bot.send_animation(chat_id=int(i[0]), animation=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                        try:
+                                            pin_message = await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
+                                        except Exception as e:
+                                           print(e)
 
-                                elif pic_type == 'photo':
-                                    message = await bot.send_photo(chat_id=i[0], photo=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
-                                    try:
-                                        await bot.pin_chat_message(chat_id=i[0], message_id=message.message_id, disable_notification=False)
-                                    except Exception as e:
-                                        text = 'Сообщение не было закреплено. Сделайте бот админом чата'
-                                        await bot.send_message(call.message.chat.id, text=text)
-                            except Exception as e:
-                                print(e)
-                        else:
-                            break
-                    await asyncio.sleep(int(users_db.get_minutes(call.message.chat.id)) * 60)
-                else:
-                    break
+                                    elif pic_type == 'photo':
+                                        message = await bot.send_photo(chat_id=int(i[0]), photo=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                        try:
+                                            await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
+                                        except Exception as e:
+                                            print(e)
+                                except Exception as e:
+                                    print(e)
+                            else:
+                                break
+
+                        await asyncio.sleep(int(users_db.get_minutes(call.message.chat.id)) * 60)
+                    else:
+                        break
 
             users_db.set_active(call.message.chat.id, active=0)
             text = 'Бот завершил размещение постов в ваших чатах'
             await bot.send_message(call.message.chat.id, text=text)
-        else:
-            text = 'Показы уже запущены'
-            await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_back('Назад'))
+    else:
+        for i in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
+            if call.data == str(i[0]):
+                shop_id = shops_db.get_shop_id(call.message.chat.id, str(i[0]))
+                tagged = shops_db.get_shop_tagged(shop_id)
+                if tagged == 1:
+                    shops_db.edit_shop_tagged(shop_id, 0)
+                elif tagged == 0:
+                    shops_db.edit_shop_tagged(shop_id, 1)
+
+                text = get_text(call.message.chat.id)
+
+                if users_db.get_active(call.message.chat.id) == 1:
+                    text += '<i>Показы на данный момент запущены</i>'
+                    await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops_suspend(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
+                else:
+                    text += '<i>Показы на данный момент остановлены</i>'
+                    await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_tagged_shops(call.message.chat.id, shops_db).add(BACK_BTN), parse_mode='HTML')
 
 
 @dispatcher.message_handler(content_types=['text'], state=FSMUser.add_contact)

@@ -58,6 +58,13 @@ class ShopsDB:
         except Exception as e:
             print(e, "get_all_shops_by")
 
+    def get_all_tagged_shops_by(self, param, sql_param, tagged=1):
+        try:
+            result = self.sql.execute(f"SELECT name FROM stores WHERE {sql_param} = ? AND tagged = ?", (param, tagged))
+            return result.fetchall()
+        except Exception as e:
+            print(e, "get_all_tagged_shops_by")
+
     def edit_shop_description(self, shop_id, description):
         try:
             self.sql.execute("UPDATE `stores` SET description = ? WHERE shop_id = ?", (description, shop_id))

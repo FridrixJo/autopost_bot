@@ -16,7 +16,7 @@ class ChatsDB:
         except Exception as s:
             print(s, "chat_exists")
 
-    def add_user(self, user_id, chat_id):
+    def add_chat(self, user_id, chat_id):
         try:
             self.sql.execute("INSERT INTO `chats` (`user_id`, `chat_id`) VALUES (?, ?)", (user_id, chat_id))
         except Exception as e:
@@ -29,4 +29,11 @@ class ChatsDB:
             return result.fetchall()
         except Exception as s:
             print(type(s))
+
+    def delete_chat(self, user_id, chat_id):
+        try:
+            self.sql.execute("DELETE FROM chats WHERE user_id = ? AND chat_id = ?", (user_id, chat_id))
+        except Exception as e:
+            print('delete_chat')
+        return self.db.commit()
 

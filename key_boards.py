@@ -155,4 +155,46 @@ def inline_markup_main_menu():
     return kb
 
 
+def inline_markup_tagged_shops(user_id: int, db: ShopsDB):
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    for i in db.get_all_shops_by(user_id, 'user_id'):
+        shop_id = db.get_shop_id(user_id, str(i[0]))
+        tagged = db.get_shop_tagged(shop_id=shop_id)
+        text = i[0]
+        if tagged == 1:
+            text += ' ✅'
+        elif tagged == 0:
+            text += ' ❌'
+
+        btn = types.InlineKeyboardButton(text=text, callback_data=str(i[0]))
+        kb.add(btn)
+
+    btn = types.InlineKeyboardButton(text='Начать размещение', callback_data='run')
+    kb.add(btn)
+
+    return kb
+
+
+def inline_markup_tagged_shops_suspend(user_id: int, db: ShopsDB):
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    for i in db.get_all_shops_by(user_id, 'user_id'):
+        shop_id = db.get_shop_id(user_id, str(i[0]))
+        tagged = db.get_shop_tagged(shop_id=shop_id)
+        text = i[0]
+        if tagged == 1:
+            text += ' ✅'
+        elif tagged == 0:
+            text += ' ❌'
+
+        btn = types.InlineKeyboardButton(text=text, callback_data=str(i[0]))
+        kb.add(btn)
+
+    btn = types.InlineKeyboardButton(text='Завершить размещение', callback_data='suspend')
+    kb.add(btn)
+
+    return kb
+
+
 
