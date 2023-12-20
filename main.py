@@ -1,5 +1,4 @@
 import asyncio
-import time
 
 from aiogram import Bot
 from aiogram import Dispatcher
@@ -7,12 +6,14 @@ from aiogram.utils import executor
 from aiogram.dispatcher.filters import Text
 from aiogram.types import ContentType
 
-from aiogram import types
 import random
 import string
 from config import *
 from key_boards import *
 from FSMClasses import *
+from aiogram import types
+import re
+
 
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -50,6 +51,15 @@ async def clear_state(state: FSMContext):
         print(error)
 
 
+def check(url):
+    reg = r'http'
+    x = re.match(pattern=reg, string=url)
+    if x is not None:
+        return True
+    else:
+        return False
+
+
 def get_name(message: types.Message):
     first_name = message.from_user.first_name
     last_name = message.from_user.last_name
@@ -78,6 +88,16 @@ async def edit_to_menu(message: types.Message):
     await bot.edit_message_text(chat_id=message.chat.id, message_id=message.message_id, text=text, reply_markup=inline_markup_menu())
 
 
+async def send_moderator_menu(message: types.Message):
+    text = 'Главное меню модератора'
+    await bot.send_message(chat_id=message.chat.id, text=text, reply_markup=inline_markup_moderator_menu())
+
+
+async def edit_to_moderator_menu(message: types.Message):
+    text = 'Главное меню модератора'
+    await bot.edit_message_text(chat_id=message.chat.id, message_id=message.message_id, text=text, reply_markup=inline_markup_moderator_menu())
+
+
 @dispatcher.message_handler(Text(equals='отмена', ignore_case=True), state=[FSMUser.add_shop, FSMUser.picture, FSMUser.edit_shop_param, FSMUser.edit_contact_param, FSMUser.add_contact, FSMUser.minutes])
 async def cancel_handler(message: types.Message, state: FSMContext):
     await clear_state(state)
@@ -93,9 +113,19 @@ def get_text(user_id: int):
     return text
 
 
-@dispatcher.message_handler(commands=['start'])
-async def start(message: types.Message):
+@dispatcher.message_handler(commands=['start'], state=["*"])
+async def start(message: types.Message, state: FSMContext):
     if not users_db.user_exists(message.chat.id):
+        message_text = "Введите пароль, чтобы использовать бота"
+        await bot.send_message(message.chat.id, text=message_text, reply_markup=reply_markup_call_off("Отмена"))
+        await FSMUser.input_password.set()
+    else:
+        await send_menu(message)
+
+
+@dispatcher.message_handler(content_types=['text'], state=FSMUser.input_password)
+async def input_password(message: types.Message, state: FSMContext):
+    if message.text == PASSWORD:
         users_db.add_user(message.chat.id, get_name(message))
         users_db.set_minutes(message.chat.id, minutes=15)
         users_db.set_active(message.chat.id, active=0)
@@ -104,7 +134,59 @@ async def start(message: types.Message):
         for i in ADMIN_IDS:
             await bot.send_message(chat_id=i, text=text)
 
-    await send_menu(message)
+        await bot.send_message(message.chat.id, 'Вы авторизованы', reply_markup=types.ReplyKeyboardRemove())
+        await send_menu(message)
+        await clear_state(state)
+    else:
+        message_text = "Неверный пароль, введите еще раз"
+        await bot.send_message(message.chat.id, text=message_text, reply_markup=reply_markup_call_off("Отмена"))
+
+
+@dispatcher.message_handler(commands=['moderator'], state=['*'])
+async def start_moderator(message: types.Message, state: FSMContext):
+    for i in ADMIN_IDS:
+        if message.chat.id == i:
+            await clear_state(state)
+            await send_moderator_menu(message)
+            await FSMAdmin.moderator_opps.set()
+
+
+@dispatcher.callback_query_handler(state=FSMAdmin.moderator_opps)
+async def start_moderator(call: types.CallbackQuery, state: FSMContext):
+    if call.data == 'main_menu':
+        await clear_state(state)
+        await edit_to_menu(call.message)
+    elif call.data == 'back':
+        await edit_to_moderator_menu(call.message)
+        await FSMAdmin.moderator_opps.set()
+    elif call.data == 'active_status':
+        text = 'Choose active status'
+        await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_active_status().add(BACK_BTN))
+        await FSMAdmin.active.set()
+    elif call.data == 'statistics':
+        text = '<b>Users statistics:</b>' + '\n\n'
+        text += f'Users: <b>{len(users_db.get_users())}</b>' + '\n'
+        text += f'Active: <b>{len(users_db.get_active_status_all(active=1))}</b>'
+
+        await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_back('Back'), parse_mode='HTML')
+
+
+@dispatcher.callback_query_handler(state=FSMAdmin.active)
+async def get_status(call: types.CallbackQuery, state: FSMContext):
+    if call.data == 'back':
+        await clear_state(state)
+        await edit_to_moderator_menu(call.message)
+        await FSMAdmin.moderator_opps.set()
+    elif call.data == 'true':
+        users_db.set_active_all(1)
+        await clear_state(state)
+        await edit_to_moderator_menu(call.message)
+        await FSMAdmin.moderator_opps.set()
+    elif call.data == 'false':
+        users_db.set_active_all(0)
+        await clear_state(state)
+        await edit_to_moderator_menu(call.message)
+        await FSMAdmin.moderator_opps.set()
 
 
 @dispatcher.message_handler(content_types=[ContentType.NEW_CHAT_MEMBERS])
@@ -118,7 +200,15 @@ async def get_chat(message: types.Message):
 
 @dispatcher.message_handler(content_types=[ContentType.LEFT_CHAT_MEMBER])
 async def get_chat(message: types.Message):
-    print(1)
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    print(user_id, chat_id)
+    if chats_db.chat_exists(user_id=user_id, chat_id=chat_id):
+        chats_db.delete_chat(user_id=user_id, chat_id=str(chat_id))
+
+
+@dispatcher.message_handler(content_types=[ContentType.LEFT_CHAT_MEMBER])
+async def get_chat(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     print(user_id, chat_id)
@@ -138,7 +228,9 @@ async def get_callback_menu(call: types.CallbackQuery):
         await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=inline_markup_shop_list(call.message.chat.id, shops_db).add(BACK_BTN))
         await FSMUser.shop.set()
     elif call.data == 'auto_post':
-        text = 'Введите количесто минут между постами (от 15 до 180)'
+        text = f'Ваш интервал: {users_db.get_minutes(user_id=call.message.chat.id)}' + '\n'
+        print(users_db.get_minutes(user_id=call.message.chat.id))
+        text += 'Для изменения введите количесто минут между постами (от 15 до 180)'
         await bot.send_message(call.message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
         await FSMUser.minutes.set()
     elif call.data == 'shows':
@@ -382,7 +474,6 @@ async def get_contact(call: types.CallbackQuery, state: FSMContext):
             text = 'Введите имя контакта'
             await bot.send_message(call.message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
             await FSMUser.add_contact.set()
-            await FSMUser.add_contact.set()
         else:
             async with state.proxy() as file:
                 shop_id = file['shop_id']
@@ -458,14 +549,24 @@ async def edit_shop_param(message: types.Message, state: FSMContext):
     print(shop_id, shop_edit)
 
     if shop_edit == 'name':
-        shops_db.edit_shop_name(shop_id, message.text)
+        if len(message.text) <= 25:
+            shops_db.edit_shop_name(shop_id=shop_id, shop_name=message.text)
+            text = 'Успешно изменено'
+            await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
+            await clear_state(state)
+            await send_menu(message)
+        else:
+            text = 'Максимальная длинна имени составляет 25 символов, введите название магазина еще раз'
+            await bot.send_message(message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
+            await FSMUser.edit_shop_param.set()
     elif shop_edit == 'description':
         shops_db.edit_shop_description(shop_id, message.text)
+        text = 'Успешно изменено'
+        await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
+        await clear_state(state)
+        await send_menu(message)
 
-    text = 'Успешно изменено'
-    await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
-    await clear_state(state)
-    await send_menu(message)
+
 
 
 @dispatcher.callback_query_handler(state=FSMUser.edit_contact)
@@ -502,14 +603,27 @@ async def edit_shop_param(message: types.Message, state: FSMContext):
         name = file['name']
 
     if contact_edit == 'name':
-        contacts_db.edit_contact_name(shop_id=shop_id, name=name, new_name=message.text)
-    elif contact_edit == 'description':
-        contacts_db.edit_contact_link(shop_id=shop_id, name=name, link=message.text)
-
-    text = 'Успешно изменено'
-    await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
-    await clear_state(state)
-    await send_menu(message)
+        if len(message.text) <= 25:
+            contacts_db.edit_contact_name(shop_id=shop_id, name=name, new_name=message.text)
+            text = 'Успешно изменено'
+            await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
+            await clear_state(state)
+            await send_menu(message)
+        else:
+            text = 'Максимальная длинна имени составляет 25 символов, введите имя контакта еще раз'
+            await bot.send_message(message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
+            await FSMUser.edit_contact_param.set()
+    elif contact_edit == 'link':
+        if check(message.text) is True:
+            contacts_db.edit_contact_link(shop_id=shop_id, name=name, link=message.text)
+            text = 'Успешно изменено'
+            await bot.send_message(message.chat.id, text=text, reply_markup=types.ReplyKeyboardRemove())
+            await clear_state(state)
+            await send_menu(message)
+        else:
+            text = 'Cсылка некорректна. Введите новую ссылку контакта еще раз'
+            await bot.send_message(message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
+            await FSMUser.edit_contact_param.set()
 
 
 @dispatcher.message_handler(state=FSMUser.minutes)
@@ -553,48 +667,48 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
 
             users_db.set_active(user_id=call.message.chat.id, active=1)
 
-            for j in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
-                shop_id = shops_db.get_shop_id(call.message.chat.id, name=j[0])
-                if shops_db.get_shop_tagged(shop_id) == 1:
-                    if users_db.get_active(call.message.chat.id) == 1:
-                        for i in chats_db.get_chats_by_user(call.message.chat.id):
+            while True:
+                if users_db.get_active(call.message.chat.id) == 1:
+                    for j in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
+                        shop_id = shops_db.get_shop_id(call.message.chat.id, name=j[0])
+                        if shops_db.get_shop_tagged(shop_id) == 1:
                             if users_db.get_active(call.message.chat.id) == 1:
+                                for i in chats_db.get_chats_by_user(call.message.chat.id):
+                                    if users_db.get_active(call.message.chat.id) == 1:
 
-                                pic_type = shops_db.get_shop_pic_type(shop_id)
-                                photo = shops_db.get_shop_picture(shop_id)
-                                shop_name = shops_db.get_shop_name(shop_id)
-                                description = shops_db.get_shop_description(shop_id)
+                                        pic_type = shops_db.get_shop_pic_type(shop_id)
+                                        photo = shops_db.get_shop_picture(shop_id)
+                                        shop_name = shops_db.get_shop_name(shop_id)
+                                        description = shops_db.get_shop_description(shop_id)
 
-                                text = f'<b>{shop_name}</b>' + '\n\n'
-                                text += f'{description}' + '\n\n'
-                                text += 'Контакты:'
+                                        text = f'<b>{shop_name}</b>' + '\n\n'
+                                        text += f'{description}' + '\n\n'
+                                        text += 'Контакты:'
 
-                                try:
-                                    if pic_type == 'gif':
-                                        message = await bot.send_animation(chat_id=int(i[0]), animation=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
                                         try:
-                                            pin_message = await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
-                                        except Exception as e:
-                                           print(e)
+                                            if pic_type == 'gif':
+                                                message = await bot.send_animation(chat_id=int(i[0]), animation=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                                try:
+                                                    pin_message = await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
+                                                except Exception as e:
+                                                   print(e)
 
-                                    elif pic_type == 'photo':
-                                        message = await bot.send_photo(chat_id=int(i[0]), photo=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
-                                        try:
-                                            await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
+                                            elif pic_type == 'photo':
+                                                message = await bot.send_photo(chat_id=int(i[0]), photo=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                                try:
+                                                    await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
+                                                except Exception as e:
+                                                    print(e)
                                         except Exception as e:
                                             print(e)
-                                except Exception as e:
-                                    print(e)
+                                    else:
+                                        break
+
+                                await asyncio.sleep(int(users_db.get_minutes(call.message.chat.id)) * 60)
                             else:
                                 break
-
-                        await asyncio.sleep(int(users_db.get_minutes(call.message.chat.id)) * 60)
-                    else:
-                        break
-
-            users_db.set_active(call.message.chat.id, active=0)
-            text = 'Бот завершил размещение постов в ваших чатах'
-            await bot.send_message(call.message.chat.id, text=text)
+                else:
+                    break
     else:
         for i in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
             if call.data == str(i[0]):
@@ -638,16 +752,21 @@ async def add_shop(message: types.Message, state: FSMContext):
             contact_name = file['contact_name']
             shop_id = file['shop_id']
 
-        contacts_db.add_contact(
-            shop_id=shop_id,
-            name=contact_name,
-            link=message.text
-        )
+        if check(message.text) is True:
+            contacts_db.add_contact(
+                shop_id=shop_id,
+                name=contact_name,
+                link=message.text
+            )
 
-        await bot.send_message(message.chat.id, text='Контакт успешно добавлен', reply_markup=types.ReplyKeyboardRemove())
+            await bot.send_message(message.chat.id, text='Контакт успешно добавлен', reply_markup=types.ReplyKeyboardRemove())
 
-        await clear_state(state)
-        await send_menu(message)
+            await clear_state(state)
+            await send_menu(message)
+        else:
+            text = 'Ссылка некорректна. Введите ссылку контакта еще раз'
+            await bot.send_message(message.chat.id, text=text, reply_markup=reply_markup_call_off('Отмена'))
+            await FSMUser.add_contact.set()
 
 
 try:

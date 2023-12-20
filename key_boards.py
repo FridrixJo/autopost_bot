@@ -15,6 +15,29 @@ def inline_markup_menu():
     return kb
 
 
+def inline_markup_moderator_menu():
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    btn1 = types.InlineKeyboardButton('Active status', callback_data='active_status')
+    btn2 = types.InlineKeyboardButton('Statistics', callback_data='statistics')
+    btn3 = types.InlineKeyboardButton('Main manu', callback_data='main_menu')
+
+    kb.add(btn1, btn2, btn3)
+
+    return kb
+
+
+def inline_markup_active_status():
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    btn1 = types.InlineKeyboardButton('True', callback_data='true')
+    btn2 = types.InlineKeyboardButton('False', callback_data='false')
+
+    kb.add(btn1, btn2)
+
+    return kb
+
+
 def reply_markup_call_off(text):
     kb = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
     btn1 = types.KeyboardButton(text=text)

@@ -102,3 +102,17 @@ class UsersDB:
             return result.fetchall()[0][0]
         except Exception as e:
             print(e, "get_minutes")
+
+    def set_active_all(self, active):
+        try:
+            self.sql.execute("UPDATE `users` SET active = ?", (active,))
+        except Exception as e:
+            print(e, "set_active_all")
+        return self.db.commit()
+
+    def get_active_status_all(self, active):
+        try:
+            result = self.sql.execute("SELECT `user_id` FROM `users` WHERE active = ?", (active,))
+            return result.fetchall()
+        except Exception as s:
+            print(type(s))

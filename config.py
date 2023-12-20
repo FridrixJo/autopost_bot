@@ -6,3 +6,4 @@ load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
+PASSWORD = os.getenv("PASSWORD")

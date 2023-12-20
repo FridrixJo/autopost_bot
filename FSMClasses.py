@@ -2,6 +2,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 
 class FSMUser(StatesGroup):
+    input_password = State()
     add_shop = State()
     add_contact = State()
     pic_type = State()
@@ -25,7 +26,8 @@ class FSMUser(StatesGroup):
 
 
 class FSMAdmin(StatesGroup):
-    pass
+    moderator_opps = State()
+    active = State()
 
 
 class FSMReply(StatesGroup):
