@@ -1,0 +1,12 @@
+[Unit]
+Description=Telegram bot 'AUTOPOST BOT'
+After=network.target
+
+[Service]
+WorkingDirectory=/usr/orders/autopost_bot/
+User=root
+ExecStart=/bin/bash entrypoint.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

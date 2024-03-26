@@ -25,8 +25,12 @@ class ChatsDB:
 
     def get_chats_by_user(self, user_id):
         try:
+            print(user_id)
+            print("get_chats_by_user")
             result = self.sql.execute("SELECT `chat_id` FROM `chats` WHERE user_id = ?", (user_id,))
-            return result.fetchall()
+            res = result.fetchall()
+            print(res)
+            return res
         except Exception as s:
             print(type(s))
 

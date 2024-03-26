@@ -5,7 +5,6 @@ from aiogram import Dispatcher
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import Text
 from aiogram.types import ContentType
-
 import random
 import string
 from config import *
@@ -191,29 +190,27 @@ async def get_status(call: types.CallbackQuery, state: FSMContext):
 
 @dispatcher.message_handler(content_types=[ContentType.NEW_CHAT_MEMBERS])
 async def get_chat(message: types.Message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    print(user_id, chat_id)
-    if not chats_db.chat_exists(user_id, chat_id):
-        chats_db.add_chat(user_id, str(chat_id))
+    print("start")
+    print(message.__dict__)
+    if users_db.user_exists(message.chat.id):
+        print("here")
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        print("HELLO")
+        print(f"add new chat {users_db.get_name(user_id=user_id)}, {chat_id}")
+        if not chats_db.chat_exists(user_id, chat_id):
+            chats_db.add_chat(user_id, str(chat_id))
 
 
 @dispatcher.message_handler(content_types=[ContentType.LEFT_CHAT_MEMBER])
 async def get_chat(message: types.Message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    print(user_id, chat_id)
-    if chats_db.chat_exists(user_id=user_id, chat_id=chat_id):
-        chats_db.delete_chat(user_id=user_id, chat_id=str(chat_id))
-
-
-@dispatcher.message_handler(content_types=[ContentType.LEFT_CHAT_MEMBER])
-async def get_chat(message: types.Message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    print(user_id, chat_id)
-    if chats_db.chat_exists(user_id, str(chat_id)):
-        chats_db.delete_chat(user_id, str(chat_id))
+    print(message.__dict__)
+    if users_db.user_exists(message.chat.id):
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        print(f"remove chat {users_db.get_name(user_id=user_id)}, {chat_id}")
+        if chats_db.chat_exists(user_id=user_id, chat_id=chat_id):
+            chats_db.delete_chat(user_id=user_id, chat_id=str(chat_id))
 
 
 @dispatcher.callback_query_handler()
@@ -667,15 +664,19 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
 
             users_db.set_active(user_id=call.message.chat.id, active=1)
 
+            print("hello")
+
             while True:
                 if users_db.get_active(call.message.chat.id) == 1:
                     for j in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
+                        print(j)
+                        print("suck")
                         shop_id = shops_db.get_shop_id(call.message.chat.id, name=j[0])
                         if shops_db.get_shop_tagged(shop_id) == 1:
                             if users_db.get_active(call.message.chat.id) == 1:
                                 for i in chats_db.get_chats_by_user(call.message.chat.id):
                                     if users_db.get_active(call.message.chat.id) == 1:
-
+                                        print(i)
                                         pic_type = shops_db.get_shop_pic_type(shop_id)
                                         photo = shops_db.get_shop_picture(shop_id)
                                         shop_name = shops_db.get_shop_name(shop_id)
@@ -685,9 +686,11 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
                                         text += f'{description}' + '\n\n'
                                         text += 'Контакты:'
 
+                                        print("send message aye")
                                         try:
                                             if pic_type == 'gif':
                                                 message = await bot.send_animation(chat_id=int(i[0]), animation=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                                print("cooool")
                                                 try:
                                                     pin_message = await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
                                                 except Exception as e:
@@ -695,6 +698,7 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
 
                                             elif pic_type == 'photo':
                                                 message = await bot.send_photo(chat_id=int(i[0]), photo=photo, caption=text, reply_markup=inline_markup_contacts_list_urls(shop_id, contacts_db), parse_mode='HTML')
+                                                print("cooool")
                                                 try:
                                                     await bot.pin_chat_message(chat_id=int(i[0]), message_id=message.message_id, disable_notification=True)
                                                 except Exception as e:
@@ -702,14 +706,24 @@ async def get_shows(call: types.CallbackQuery, state: FSMContext):
                                         except Exception as e:
                                             print(e)
                                     else:
+                                        print("break1")
                                         break
-
+                                print("sleep")
                                 await asyncio.sleep(int(users_db.get_minutes(call.message.chat.id)) * 60)
                             else:
+                                print("break2")
+
                                 break
+                        else:
+                            print("break do not have active shops")
+                            break
                 else:
+                    print("break3")
+
                     break
     else:
+        print("break3")
+
         for i in shops_db.get_all_shops_by(call.message.chat.id, 'user_id'):
             if call.data == str(i[0]):
                 shop_id = shops_db.get_shop_id(call.message.chat.id, str(i[0]))
